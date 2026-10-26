@@ -86,8 +86,9 @@ if showSeps and newDay
     line.new(bar_index, low, bar_index, high, extend=extend.both, color=sepColor, style=line.style_dashed)
     label.new(bar_index, high + 3 * atrV, dayTitle, style=label.style_label_left, color=color.new(dayColor, 15), textcolor=color.white, size=size.small)
 
-plot(f, "Fast SMA", color.new(color.blue, 40))
-plot(s, "Slow SMA", color.new(color.orange, 40))
+maColor = f > s ? color.green : f < s ? color.red : color.gray
+plot(f, "Fast SMA", maColor, 2)
+plot(s, "Slow SMA", maColor, 2)
 
 alertcondition(buySig,  "Buy setup",  "Weekday setup BUY on {{ticker}} @ {{close}}")
 alertcondition(sellSig, "Sell setup", "Weekday setup SELL on {{ticker}} @ {{close}}")
