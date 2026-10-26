@@ -15,15 +15,19 @@ def test_schedule_days():
     assert set(SCHEDULE[4]) == {"reversal", "fake_out"}
 
 
-def test_tuesday_breakout_only_on_tuesday():
+def test_tuesday_breakout_entry():
     bars = flat(25) + [bar(100, 105, 100, 104)]
-    assert scan({"X": bars}, date(2026, 10, 27)) == {"X": ["high_breakout"]}
+    s = scan({"X": bars}, date(2026, 10, 27))["X"][0]
+    assert (s.setup, s.direction, s.entry) == ("high_breakout", "buy", 104)
+    assert s.stop < s.entry < s.target
     assert scan({"X": bars}, date(2026, 10, 28)) == {}
 
 
-def test_friday_fakeout():
+def test_friday_fakeout_sell():
     bars = flat(25) + [bar(100, 105, 99.5, 100.5)]
-    assert "fake_out" in scan({"X": bars}, date(2026, 10, 30))["X"]
+    sigs = scan({"X": bars}, date(2026, 10, 30))["X"]
+    s = [x for x in sigs if x.setup == "fake_out"][0]
+    assert s.direction == "sell" and s.target < s.entry < s.stop
 
 
 def test_monday_no_scan():
