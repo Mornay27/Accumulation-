@@ -1,0 +1,71 @@
+//@version=5
+indicator("Weekday Setups (Breakout / Trend / Reversal / Fakeout)", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// Tue = high breakouts | Wed = trend continuation | Thu = reversals | Fri = reversals + fake-outs
+lookback = input.int(20, "Breakout / range lookback", minval=5)
+fastLen  = input.int(10, "Fast SMA", minval=2)
+slowLen  = input.int(30, "Slow SMA", minval=3)
+revLook  = input.int(10, "Reversal prior-move lookback", minval=2)
+rr       = input.float(2.0, "Reward : Risk", minval=0.5, step=0.5)
+atrMult  = input.float(0.25, "Stop buffer (x ATR)", minval=0.0, step=0.05)
+showLvls = input.bool(true, "Draw SL / TP lines")
+
+atrV = ta.atr(14)
+dow  = dayofweek(time, syminfo.timezone)
+isTue = dow == dayofweek.tuesday
+isWed = dow == dayofweek.wednesday
+isThu = dow == dayofweek.thursday
+isFri = dow == dayofweek.friday
+
+hi = ta.highest(high, lookback)[1]
+lo = ta.lowest(low, lookback)[1]
+f  = ta.sma(close, fastLen)
+s  = ta.sma(close, slowLen)
+
+// Tuesday: breakout
+brkBuy  = isTue and close > hi
+brkSell = isTue and close < lo
+
+// Wednesday: trend continuation (pullback to fast SMA)
+contBuy  = isWed and f > s and low[1] <= f and close > f and close > open
+contSell = isWed and f < s and high[1] >= f and close < f and close < open
+
+// Thursday + Friday: engulfing reversal against prior move
+move = close[1] - close[revLook + 1]
+revBuy  = (isThu or isFri) and move < 0 and close[1] < open[1] and close > open[1] and open <= close[1]
+revSell = (isThu or isFri) and move > 0 and close[1] > open[1] and close < open[1] and open >= close[1]
+
+// Friday: fake-out (failed break, closes back inside range)
+fakeSell = isFri and high > hi and close < hi
+fakeBuy  = isFri and low  < lo and close > lo
+
+buySig  = brkBuy or contBuy or revBuy or fakeBuy
+sellSig = brkSell or contSell or revSell or fakeSell
+
+// Stops beyond signal candle (and prior candle for 2-bar patterns)
+buyStop  = (contBuy or revBuy ? math.min(low, low[1]) : low) - atrMult * atrV
+sellStop = (contSell or revSell ? math.max(high, high[1]) : high) + atrMult * atrV
+
+setupName(b, c, r, k) => b ? "Breakout" : c ? "Trend" : r ? "Reversal" : k ? "Fake-out" : ""
+
+if buySig and barstate.isconfirmed
+    risk = close - buyStop
+    tp = close + rr * risk
+    label.new(bar_index, low, setupName(brkBuy, contBuy, revBuy, fakeBuy) + " BUY\nE " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(buyStop, format.mintick) + "\nTP " + str.tostring(tp, format.mintick), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    if showLvls
+        line.new(bar_index, buyStop, bar_index + 10, buyStop, color=color.red)
+        line.new(bar_index, tp, bar_index + 10, tp, color=color.green)
+
+if sellSig and barstate.isconfirmed
+    risk = sellStop - close
+    tp = close - rr * risk
+    label.new(bar_index, high, setupName(brkSell, contSell, revSell, fakeSell) + " SELL\nE " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(sellStop, format.mintick) + "\nTP " + str.tostring(tp, format.mintick), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    if showLvls
+        line.new(bar_index, sellStop, bar_index + 10, sellStop, color=color.red)
+        line.new(bar_index, tp, bar_index + 10, tp, color=color.green)
+
+plot(f, "Fast SMA", color.new(color.blue, 40))
+plot(s, "Slow SMA", color.new(color.orange, 40))
+
+alertcondition(buySig,  "Buy setup",  "Weekday setup BUY on {{ticker}} @ {{close}}")
+alertcondition(sellSig, "Sell setup", "Weekday setup SELL on {{ticker}} @ {{close}}")
