@@ -9,6 +9,8 @@ revLook  = input.int(10, "Reversal prior-move lookback", minval=2)
 rr       = input.float(2.0, "Reward : Risk", minval=0.5, step=0.5)
 atrMult  = input.float(0.25, "Stop buffer (x ATR)", minval=0.0, step=0.05)
 showLvls = input.bool(true, "Draw SL / TP lines")
+showSeps = input.bool(true, "Show day separators + headers")
+sepColor = input.color(color.new(color.gray, 50), "Separator colour")
 
 atrV = ta.atr(14)
 dow  = dayofweek(time, syminfo.timezone)
@@ -63,6 +65,26 @@ if sellSig and barstate.isconfirmed
     if showLvls
         line.new(bar_index, sellStop, bar_index + 10, sellStop, color=color.red)
         line.new(bar_index, tp, bar_index + 10, tp, color=color.green)
+
+// ---- Day separators with header (title + what is expected) ----
+newDay = timeframe.isintraday and ta.change(time("D")) != 0
+dayTitle = switch dow
+    dayofweek.monday => "MONDAY\nNo scan / range building"
+    dayofweek.tuesday => "TUESDAY\nHigh breakouts"
+    dayofweek.wednesday => "WEDNESDAY\nTrend continuation"
+    dayofweek.thursday => "THURSDAY\nReversal setups"
+    dayofweek.friday => "FRIDAY\nReversals + fake-outs"
+    => "WEEKEND"
+dayColor = switch dow
+    dayofweek.tuesday => color.green
+    dayofweek.wednesday => color.blue
+    dayofweek.thursday => color.orange
+    dayofweek.friday => color.red
+    => color.gray
+
+if showSeps and newDay
+    line.new(bar_index, low, bar_index, high, extend=extend.both, color=sepColor, style=line.style_dashed)
+    label.new(bar_index, high + 3 * atrV, dayTitle, style=label.style_label_left, color=color.new(dayColor, 15), textcolor=color.white, size=size.small)
 
 plot(f, "Fast SMA", color.new(color.blue, 40))
 plot(s, "Slow SMA", color.new(color.orange, 40))
