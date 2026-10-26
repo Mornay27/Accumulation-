@@ -1,16 +1,25 @@
 //@version=5
-indicator("Weekday Setups (Breakout / Trend / Reversal / Fakeout)", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("Weekday Setups", overlay=true, max_labels_count=500, max_lines_count=500)
 
 // Tue = high breakouts | Wed = trend continuation | Thu = reversals | Fri = reversals + fake-outs
-lookback = input.int(20, "Breakout / range lookback", minval=5)
-fastLen  = input.int(10, "Fast SMA", minval=2)
-slowLen  = input.int(30, "Slow SMA", minval=3)
-revLook  = input.int(10, "Reversal prior-move lookback", minval=2)
-rr       = input.float(2.0, "Reward : Risk", minval=0.5, step=0.5)
-atrMult  = input.float(0.25, "Stop buffer (x ATR)", minval=0.0, step=0.05)
-showLvls = input.bool(true, "Draw SL / TP lines")
-showSeps = input.bool(true, "Show day separators + headers")
-sepColor = input.color(color.new(color.gray, 50), "Separator colour")
+// Any day (optional) = trend shift on moving average crossover
+g1 = "Setups"
+lookback = input.int(20, "Breakout / range lookback", minval=5, group=g1)
+fastLen  = input.int(10, "Fast SMA", minval=2, group=g1)
+slowLen  = input.int(30, "Slow SMA", minval=3, group=g1)
+revLook  = input.int(10, "Reversal prior-move lookback", minval=2, group=g1)
+useCross = input.bool(true, "Trend-shift entries on MA crossover (all days)", group=g1)
+
+g2 = "Risk"
+rr       = input.float(2.0, "Reward : Risk", minval=0.5, step=0.5, group=g2)
+atrMult  = input.float(0.25, "Stop buffer (x ATR)", minval=0.0, step=0.05, group=g2)
+
+g3 = "Display"
+showLvls  = input.bool(false, "Draw SL / TP lines", group=g3)
+showDet   = input.bool(false, "Show entry/SL/TP text on label (otherwise in hover tooltip)", group=g3)
+showSeps  = input.bool(true, "Day separators + headers", group=g3)
+showShift = input.bool(true, "Shade MA ribbon", group=g3)
+sepColor  = input.color(color.new(color.gray, 80), "Separator colour", group=g3)
 
 atrV = ta.atr(14)
 dow  = dayofweek(time, syminfo.timezone)
@@ -41,39 +50,48 @@ revSell = (isThu or isFri) and move > 0 and close[1] > open[1] and close < open[
 fakeSell = isFri and high > hi and close < hi
 fakeBuy  = isFri and low  < lo and close > lo
 
-buySig  = brkBuy or contBuy or revBuy or fakeBuy
-sellSig = brkSell or contSell or revSell or fakeSell
+// Any day: trend shift = MA crossover
+shiftBuy  = useCross and ta.crossover(f, s)
+shiftSell = useCross and ta.crossunder(f, s)
+
+buySig  = brkBuy or contBuy or revBuy or fakeBuy or shiftBuy
+sellSig = brkSell or contSell or revSell or fakeSell or shiftSell
 
 // Stops beyond signal candle (and prior candle for 2-bar patterns)
-buyStop  = (contBuy or revBuy ? math.min(low, low[1]) : low) - atrMult * atrV
-sellStop = (contSell or revSell ? math.max(high, high[1]) : high) + atrMult * atrV
+twoBarBuy  = contBuy or revBuy
+twoBarSell = contSell or revSell
+buyStop  = (twoBarBuy ? math.min(low, low[1]) : low) - atrMult * atrV
+sellStop = (twoBarSell ? math.max(high, high[1]) : high) + atrMult * atrV
 
-setupName(b, c, r, k) => b ? "Breakout" : c ? "Trend" : r ? "Reversal" : k ? "Fake-out" : ""
+setupName(b, c, r, k, x) => b ? "Breakout" : c ? "Trend" : r ? "Reversal" : k ? "Fake-out" : x ? "Trend shift" : ""
+
+buyName  = setupName(brkBuy, contBuy, revBuy, fakeBuy, shiftBuy)
+sellName = setupName(brkSell, contSell, revSell, fakeSell, shiftSell)
 
 if buySig and barstate.isconfirmed
-    risk = close - buyStop
-    tp = close + rr * risk
-    label.new(bar_index, low, setupName(brkBuy, contBuy, revBuy, fakeBuy) + " BUY\nE " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(buyStop, format.mintick) + "\nTP " + str.tostring(tp, format.mintick), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    tp = close + rr * (close - buyStop)
+    lvls = "Entry " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(buyStop, format.mintick) + "\nTP " + str.tostring(tp, format.mintick)
+    label.new(bar_index, low, "BUY " + buyName + (showDet ? "\n" + lvls : ""), style=label.style_label_up, color=color.new(color.green, 10), textcolor=color.white, size=size.tiny, tooltip=lvls)
     if showLvls
-        line.new(bar_index, buyStop, bar_index + 10, buyStop, color=color.red)
-        line.new(bar_index, tp, bar_index + 10, tp, color=color.green)
+        line.new(bar_index, buyStop, bar_index + 8, buyStop, color=color.new(color.red, 30), style=line.style_dotted)
+        line.new(bar_index, tp, bar_index + 8, tp, color=color.new(color.green, 30), style=line.style_dotted)
 
 if sellSig and barstate.isconfirmed
-    risk = sellStop - close
-    tp = close - rr * risk
-    label.new(bar_index, high, setupName(brkSell, contSell, revSell, fakeSell) + " SELL\nE " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(sellStop, format.mintick) + "\nTP " + str.tostring(tp, format.mintick), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    tp = close - rr * (sellStop - close)
+    lvls = "Entry " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(sellStop, format.mintick) + "\nTP " + str.tostring(tp, format.mintick)
+    label.new(bar_index, high, "SELL " + sellName + (showDet ? "\n" + lvls : ""), style=label.style_label_down, color=color.new(color.red, 10), textcolor=color.white, size=size.tiny, tooltip=lvls)
     if showLvls
-        line.new(bar_index, sellStop, bar_index + 10, sellStop, color=color.red)
-        line.new(bar_index, tp, bar_index + 10, tp, color=color.green)
+        line.new(bar_index, sellStop, bar_index + 8, sellStop, color=color.new(color.red, 30), style=line.style_dotted)
+        line.new(bar_index, tp, bar_index + 8, tp, color=color.new(color.green, 30), style=line.style_dotted)
 
-// ---- Day separators with header (title + what is expected) ----
+// ---- Day separators with small header (title + what is expected) ----
 newDay = timeframe.isintraday and ta.change(time("D")) != 0
 dayTitle = switch dow
-    dayofweek.monday => "MONDAY\nNo scan / range building"
-    dayofweek.tuesday => "TUESDAY\nHigh breakouts"
-    dayofweek.wednesday => "WEDNESDAY\nTrend continuation"
-    dayofweek.thursday => "THURSDAY\nReversal setups"
-    dayofweek.friday => "FRIDAY\nReversals + fake-outs"
+    dayofweek.monday => "MON - range building"
+    dayofweek.tuesday => "TUE - high breakouts"
+    dayofweek.wednesday => "WED - trend continuation"
+    dayofweek.thursday => "THU - reversals"
+    dayofweek.friday => "FRI - reversals + fake-outs"
     => "WEEKEND"
 dayColor = switch dow
     dayofweek.tuesday => color.green
@@ -83,12 +101,16 @@ dayColor = switch dow
     => color.gray
 
 if showSeps and newDay
-    line.new(bar_index, low, bar_index, high, extend=extend.both, color=sepColor, style=line.style_dashed)
-    label.new(bar_index, high + 3 * atrV, dayTitle, style=label.style_label_left, color=color.new(dayColor, 15), textcolor=color.white, size=size.small)
+    line.new(bar_index, low, bar_index, high, extend=extend.both, color=sepColor, style=line.style_dotted)
+    label.new(bar_index, high + 3 * atrV, dayTitle, style=label.style_label_left, color=color.new(dayColor, 35), textcolor=color.white, size=size.tiny)
 
+// ---- Moving averages: green in uptrend, red in downtrend ----
 maColor = f > s ? color.green : f < s ? color.red : color.gray
-plot(f, "Fast SMA", maColor, 2)
-plot(s, "Slow SMA", maColor, 2)
+pf = plot(f, "Fast SMA", maColor, 2)
+ps = plot(s, "Slow SMA", color.new(maColor, 40), 1)
+fill(pf, ps, showShift ? color.new(maColor, 90) : na)
 
 alertcondition(buySig,  "Buy setup",  "Weekday setup BUY on {{ticker}} @ {{close}}")
 alertcondition(sellSig, "Sell setup", "Weekday setup SELL on {{ticker}} @ {{close}}")
+alertcondition(shiftBuy,  "Trend shift up",   "Trend shift UP on {{ticker}} @ {{close}}")
+alertcondition(shiftSell, "Trend shift down", "Trend shift DOWN on {{ticker}} @ {{close}}")
